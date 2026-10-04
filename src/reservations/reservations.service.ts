@@ -1,5 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { eq, sql } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import { DB_PROVIDER, type DrizzleDB } from 'src/database/database.module';
 import { idempotencyRecords, products, reservationItems, reservations } from 'src/database/schemas';
 import { normalizeItems } from './utils/helpers/normalizer';
@@ -68,5 +68,18 @@ export class ReservationsService {
         return reserved[0];
 
     });
+  }
+
+  async getReservation(reservationId: string, userId: string) {
+    const queryResult = await this.db.select().from(reservations).where(
+        and(eq(reservations.id, reservationId),
+        eq(reservations.userId, userId)
+    )); 
+
+    if (queryResult.length === 0) {
+        throw new Error('Reservation not found or does not belong to the user');
+    }
+
+    return queryResult[0];
   }
 }
