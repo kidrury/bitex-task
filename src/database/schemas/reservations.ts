@@ -6,7 +6,7 @@ export const reservations = pgTable("reservations", {
     id: uuid("id").primaryKey().defaultRandom(),
     userId: uuid("user_id").notNull(),
     status: reservationStatus("status").notNull().default("HELD"),
-    created_at: timestamp("created_at").notNull().defaultNow(),
-    expires_at: timestamp("expires_at").notNull(),
-    updated_at: timestamp("updated_at"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    expiresAt: timestamp("expires_at").notNull(),
+    updatedAt: timestamp("updated_at"),
 })
