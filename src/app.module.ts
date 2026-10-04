@@ -4,11 +4,12 @@ import { AppService } from './app.service';
 import { DatabaseModule } from './database/database.module';
 import { ConfigModule } from '@nestjs/config';
 import { ProductsModule } from './products/products.module';
+import { ReservationsModule } from './reservations/reservations.module';
 
 @Module({
   imports: [DatabaseModule, ConfigModule.forRoot({
     isGlobal: true,
-  }), ProductsModule],
+  }), ProductsModule, ReservationsModule],
   controllers: [AppController],
   providers: [AppService],
 })
