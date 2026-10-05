@@ -1,5 +1,5 @@
 import { ConflictException, Inject, Injectable, NotFoundException } from '@nestjs/common';
-import { and, eq, sql } from 'drizzle-orm';
+import { and, eq, lt, sql } from 'drizzle-orm';
 import { DB_PROVIDER, type DrizzleDB } from 'src/database/database.module';
 import { idempotencyRecords, products, reservationHistory, reservationItems, reservations } from 'src/database/schemas';
 import { normalizeItems } from './utils/helpers/normalizer';
@@ -260,5 +260,76 @@ export class ReservationsService {
 
         return reservation[0];
     });
+  }
+
+  // used by scheduler cron
+  async cancelExpiredReservations() {
+
+    const BATCH_SIZE = 100;
+    const now = new Date();
+
+    let processedCount = 0
+
+    while (true) {
+        const processed: number = await this.db.transaction(async (tx) => {
+      
+            //first we get the HELD reservations that their expiry date is already due
+            const expiredReservations = await tx.select().from(reservations).where(
+                and(
+                eq(reservations.status, 'HELD'),
+                lt(reservations.expiresAt, now),
+                )
+            ).limit(BATCH_SIZE).for('update');
+
+            if (expiredReservations.length === 0) {
+                return 0;
+            }
+
+            //each of those should have their status set as EXPIRED
+            for (const reser of expiredReservations) {
+                //each of those should have their status set as EXPIRED
+                await tx.update(reservations).set({
+                    status: "EXPIRED",
+                    updatedAt: now
+                }).where(eq(reservations.id, reser.id))
+
+                //each should have their reserved items released
+
+                //get all the products each reservation holds
+                const items = await tx.select().from(reservationItems).where(
+                    eq(reservationItems.reservationId, reser.id)
+                ).for('update')
+
+                //release reservations of each product
+                for (const item of items) {
+                    await tx.update(products).set({
+                        reserved: sql`${products.reserved} - ${item.quantity}`
+                    }).where(eq(
+                        products.id, item.productId
+                    ))
+                }
+
+                //register the transition in reservations history
+                await tx.insert(reservationHistory).values({
+                    reservationId: reser.id,
+                    userId: reser.userId,
+                    oldStatus: reser.status,
+                    newStatus: 'EXPIRED',
+                    actor: "system",
+                    transitionedAt: now,
+                })
+            }
+
+            return expiredReservations.length
+        });
+
+        processedCount += processed
+
+        if (processed < BATCH_SIZE) {
+            break;
+        }
+    }
+
+    return { message: `Processed ${processedCount} expired reservations` };
   }
 }
