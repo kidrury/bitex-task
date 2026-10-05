@@ -1,7 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { and, eq, sql } from 'drizzle-orm';
 import { DB_PROVIDER, type DrizzleDB } from 'src/database/database.module';
-import { idempotencyRecords, products, reservationItems, reservations } from 'src/database/schemas';
+import { idempotencyRecords, products, reservationHistory, reservationItems, reservations } from 'src/database/schemas';
 import { normalizeItems } from './utils/helpers/normalizer';
 import { ReservationDTO } from './DTO/reservation.dto';
 
@@ -81,5 +81,59 @@ export class ReservationsService {
     }
 
     return queryResult[0];
+  }
+
+  async confirmReservation(reservationId: string, userId: string) {
+    await this.db.transaction(async (tx) => {
+        const reservation = await tx.select().from(reservations).where(
+            and(eq(reservations.id, reservationId),
+            eq(reservations.userId, userId)
+        ));
+
+        if (reservation.length === 0) {
+            throw new Error('Reservation not found or does not belong to the user');
+        }
+
+        if (reservation[0].expiresAt < new Date()) {
+            throw new Error('Reservation has expired');
+        }
+
+        if (reservation[0].status !== 'HELD') {
+            if (reservation[0].status === 'CONFIRMED') {
+                return { message: 'Reservation already confirmed' };
+            }
+            throw new Error('Reservation is not in a confirmable state');
+        }
+
+        await tx.update(reservations).set({
+            status: 'CONFIRMED',
+        }).where(eq(reservations.id, reservationId));
+
+        const reservedItems = await tx.select().from(reservationItems).where(
+            eq(reservationItems.reservationId, reservationId)
+        );
+
+        for (const item of reservedItems) {
+            await tx.update(products).set({
+                reserved: sql`${products.reserved} - ${item.quantity}`,
+                onHand: sql`${products.onHand} - ${item.quantity}`,
+            }).where(eq(products.id, item.productId));
+        }
+
+        await tx.delete(idempotencyRecords).where(eq(idempotencyRecords.reservationId, reservationId));
+
+        await tx.update(reservationHistory).set({
+            oldStatus: reservation[0].status,
+            newStatus: 'CONFIRMED',
+            transitionedAt: new Date(),
+            actor: userId,
+        }).where(eq(reservationHistory.reservationId, reservationId));
+    });
+
+    return { message: 'Reservation confirmed' };
+  }
+
+  async cancelReservation(reservationId: string, userId: string) {
+    throw new Error('Method not implemented.');
   }
 }

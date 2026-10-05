@@ -24,4 +24,10 @@ export class ReservationsController {
     const userId = "3631c0f9-e545-46ee-8145-a78e0384219e"; // will replace with actual user ID retrieval logic
     return this.reservationsService.getReservation(reservationId, userId);
   }
+
+  @Post(':id/confirm')
+  async confirmReservation(@Param('id') reservationId: string) {
+    const userId = "3631c0f9-e545-46ee-8145-a78e0384219e"; // will replace with actual user ID retrieval logic
+    return this.reservationsService.confirmReservation(reservationId, userId);
+  }
 }
