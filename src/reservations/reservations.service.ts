@@ -1,4 +1,4 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { ConflictException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { and, eq, sql } from 'drizzle-orm';
 import { DB_PROVIDER, type DrizzleDB } from 'src/database/database.module';
 import { idempotencyRecords, products, reservationHistory, reservationItems, reservations } from 'src/database/schemas';
@@ -11,102 +11,154 @@ export class ReservationsService {
 
 
   async createReservation(body: ReservationDTO, idempotencyKey: string, userId: string) {
-    await this.db.transaction(async (tx) => {
-        const existing = await tx.select().from(idempotencyRecords).where(
-            eq(idempotencyRecords.idempotencyKey, idempotencyKey)
-        );
-        if (existing.length > 0) {
-            if (normalizeItems(body) === existing[0].normalizedItems) {
-                // should return successful response without creating a new reservation
-                return existing[0].reservationId;
-            }
-            throw new Error('Duplicate request with the same idempotency key but different items');
+    const existing = await this.db.select().from(idempotencyRecords).where(
+    and(
+      eq(idempotencyRecords.userId, userId),
+      eq(idempotencyRecords.idempotencyKey, idempotencyKey)
+    )
+    );
+
+    if (existing.length > 0) {
+        const normalized = normalizeItems(body);
+        if (normalized !== existing[0].normalizedItems) {
+            throw new ConflictException('Idempotency key reused with different items');
         }
+        // exact same reservation, so we return the existing one instead of creating a new one
+        return await this.getReservation(existing[0].reservationId, userId);
+    } 
+    try {
+        return await this.db.transaction(async (tx) => {
+            const reserved = await tx.insert(reservations).values({
+                userId: userId,
+                expiresAt: new Date(Date.now() + 10 * 60 * 1000), // 10 minutes from now
+            }).returning({ id: reservations.id });
 
-        const reserved = await tx.insert(reservations).values({
-            userId: userId,
-            expiresAt: new Date(Date.now() + 10 * 60 * 1000), // 10 minutes from now
-        }).returning({ id: reservations.id });
+            for (const item of body.items) {
+                //for each item, check if there's enough inventory and update the reserved count
+                const [product] = await tx.select({
+                    reserved: products.reserved,
+                    onHand: products.onHand,
+                }).from(products).where(eq(products.id, item.productId)).for('update');
 
-        for (const item of body.items) {
-            //for each item, check if there's enough inventory and update the reserved count
-            const [product] = await tx.select({
-                reserved: products.reserved,
-                onHand: products.onHand,
-            }).from(products).where(eq(products.id, item.productId));
+                //does the product exist at all?
+                if (!product) {
+                    throw new NotFoundException(`Product ${item.productId} not found`);
+                }
 
-            //does the product exist at all?
-            if (!product) {
-                throw new Error(`Product ${item.productId} not found`);
+                //does the product have enough inventory to reserve the requested quantity?
+                if (product.reserved + item.quantity > product.onHand) {
+                    throw new ConflictException(`Not enough inventory for product ${item.productId}`);
+                }
+
+                //it exists and has enough inventory, so update the reserved count
+                await tx.update(products).set({
+                    reserved: sql`${products.reserved} + ${item.quantity}`,
+                }).where(eq(products.id, item.productId));
+
+                //create a reservation item record for this product
+                await tx.insert(reservationItems).values({
+                    reservationId: reserved[0].id,
+                    productId: item.productId,
+                    quantity: item.quantity,
+                });
             }
 
-            //does the product have enough inventory to reserve the requested quantity?
-            if (product.reserved + item.quantity > product.onHand) {
-                throw new Error(`Not enough inventory for product ${item.productId}`);
-            }
-
-            //it exists and has enough inventory, so update the reserved count
-            await tx.update(products).set({
-                reserved: sql`${products.reserved} + ${item.quantity}`,
-            }).where(eq(products.id, item.productId));
-
-            //create a reservation item record for this product
-            await tx.insert(reservationItems).values({
+            await tx.insert(idempotencyRecords).values({
+                userId: userId,
+                idempotencyKey: idempotencyKey,
+                normalizedItems: normalizeItems(body),
                 reservationId: reserved[0].id,
-                productId: item.productId,
-                quantity: item.quantity,
             });
-        }
 
-        await tx.insert(idempotencyRecords).values({
-            userId: userId,
-            idempotencyKey: idempotencyKey,
-            normalizedItems: normalizeItems(body),
-            reservationId: reserved[0].id,
+            return reserved[0];
+
         });
+    } catch (error) {
+        const err = error as { code?: string };
 
-        return reserved[0];
-
-    });
+        if (err.code === '23505') { // one of the requests failed because of a unique constraint violation
+            const retried = await this.db.select().from(idempotencyRecords).where(
+                and(
+                    eq(idempotencyRecords.userId, userId),
+                    eq(idempotencyRecords.idempotencyKey, idempotencyKey)
+                )
+            );
+            if (retried.length > 0) {
+                return await this.getReservation(retried[0].reservationId, userId);
+            }
+        }
+        throw error;
+    }
   }
 
   async getReservation(reservationId: string, userId: string) {
     const queryResult = await this.db.select().from(reservations).where(
-        and(eq(reservations.id, reservationId),
-        eq(reservations.userId, userId)
-    )); 
+        and(
+            eq(reservations.id, reservationId),
+            eq(reservations.userId, userId)
+        )
+    );
 
     if (queryResult.length === 0) {
-        throw new Error('Reservation not found or does not belong to the user');
+        throw new NotFoundException('Reservation not found or does not belong to the user');
     }
 
     return queryResult[0];
   }
 
   async confirmReservation(reservationId: string, userId: string) {
-    await this.db.transaction(async (tx) => {
+    return await this.db.transaction(async (tx) => {
+        const now = new Date();
         const reservation = await tx.select().from(reservations).where(
-            and(eq(reservations.id, reservationId),
-            eq(reservations.userId, userId)
-        ));
+            and(
+                eq(reservations.id, reservationId),
+                eq(reservations.userId, userId)
+            )
+        ).for('update');
 
         if (reservation.length === 0) {
-            throw new Error('Reservation not found or does not belong to the user');
-        }
-
-        if (reservation[0].expiresAt < new Date()) {
-            throw new Error('Reservation has expired');
+            throw new NotFoundException('Reservation not found or does not belong to the user');
         }
 
         if (reservation[0].status !== 'HELD') {
+            //idempotency check
             if (reservation[0].status === 'CONFIRMED') {
                 return { message: 'Reservation already confirmed' };
             }
-            throw new Error('Reservation is not in a confirmable state');
+            throw new ConflictException('Reservation is not in a confirmable state');
         }
+
+        if (reservation[0].expiresAt < now) {
+            await tx.update(reservations).set({
+                status: 'EXPIRED',
+                updatedAt: now,
+            }).where(eq(reservations.id, reservationId));
+
+            const item = await tx.select().from(reservationItems).where(
+                eq(reservationItems.reservationId, reservationId)
+            );
+
+            for (const i of item) {
+                await tx.update(products).set({
+                    reserved: sql`${products.reserved} - ${i.quantity}`,
+                }).where(eq(products.id, i.productId));
+            }
+
+            await tx.insert(reservationHistory).values({
+                reservationId: reservationId,
+                userId: userId,
+                oldStatus: reservation[0].status,
+                newStatus: 'EXPIRED',
+                actor: "system",
+                transitionedAt: now,
+            });
+            throw new ConflictException('Reservation has expired');
+        }
+
 
         await tx.update(reservations).set({
             status: 'CONFIRMED',
+            updatedAt: now,
         }).where(eq(reservations.id, reservationId));
 
         const reservedItems = await tx.select().from(reservationItems).where(
@@ -120,36 +172,66 @@ export class ReservationsService {
             }).where(eq(products.id, item.productId));
         }
 
-        await tx.delete(idempotencyRecords).where(eq(idempotencyRecords.reservationId, reservationId));
-
-        await tx.update(reservationHistory).set({
+        await tx.insert(reservationHistory).values({
+            reservationId: reservationId,
+            userId: userId,
             oldStatus: reservation[0].status,
             newStatus: 'CONFIRMED',
-            transitionedAt: new Date(),
             actor: userId,
-        }).where(eq(reservationHistory.reservationId, reservationId));
-    });
+            transitionedAt: now,
+        });
 
-    return { message: 'Reservation confirmed' };
+        return reservation[0];
+    });
   }
 
   async cancelReservation(reservationId: string, userId: string) {
-    await this.db.transaction(async (tx) => {
+    return await this.db.transaction(async (tx) => {
         const now = new Date();
         const reservation = await tx.select().from(reservations).where(
-            and(eq(reservations.id, reservationId),
-            eq(reservations.userId, userId)
-        ));
+            and(
+                eq(reservations.id, reservationId),
+                eq(reservations.userId, userId)
+            )
+        ).for('update');
 
         if (reservation.length === 0) {
-            throw new Error('Reservation not found or does not belong to the user');
+            throw new NotFoundException('Reservation not found or does not belong to the user');
         }
 
         if (reservation[0].status !== 'HELD') {
+            //idempotency check
             if (reservation[0].status === 'CANCELLED') {
                 return { message: 'Reservation already cancelled' };
             }
-            throw new Error('Reservation is not in a cancellable state');
+            throw new ConflictException('Reservation is not in a cancellable state');
+        }
+
+        if (reservation[0].expiresAt < now) {
+            await tx.update(reservations).set({
+                status: 'EXPIRED',
+                updatedAt: now,
+            }).where(eq(reservations.id, reservationId));
+
+            const item = await tx.select().from(reservationItems).where(
+                eq(reservationItems.reservationId, reservationId)
+            );
+
+            for (const i of item) {
+                await tx.update(products).set({
+                    reserved: sql`${products.reserved} - ${i.quantity}`,
+                }).where(eq(products.id, i.productId));
+            }
+
+            await tx.insert(reservationHistory).values({
+                reservationId: reservationId,
+                userId: userId,
+                oldStatus: reservation[0].status,
+                newStatus: 'EXPIRED',
+                actor: "system",
+                transitionedAt: now,
+            });
+            throw new ConflictException('Reservation has expired');
         }
 
         await tx.update(reservations).set({
@@ -167,8 +249,6 @@ export class ReservationsService {
             }).where(eq(products.id, item.productId));
         }
 
-        await tx.delete(idempotencyRecords).where(eq(idempotencyRecords.reservationId, reservationId));
-
         await tx.insert(reservationHistory).values({
             reservationId: reservationId,
             userId: userId,
@@ -177,8 +257,8 @@ export class ReservationsService {
             actor: userId,
             transitionedAt: now,
         });
-    });
 
-    return { message: 'Reservation cancelled' };
+        return reservation[0];
+    });
   }
 }
