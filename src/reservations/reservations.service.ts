@@ -134,6 +134,51 @@ export class ReservationsService {
   }
 
   async cancelReservation(reservationId: string, userId: string) {
-    throw new Error('Method not implemented.');
+    await this.db.transaction(async (tx) => {
+        const now = new Date();
+        const reservation = await tx.select().from(reservations).where(
+            and(eq(reservations.id, reservationId),
+            eq(reservations.userId, userId)
+        ));
+
+        if (reservation.length === 0) {
+            throw new Error('Reservation not found or does not belong to the user');
+        }
+
+        if (reservation[0].status !== 'HELD') {
+            if (reservation[0].status === 'CANCELLED') {
+                return { message: 'Reservation already cancelled' };
+            }
+            throw new Error('Reservation is not in a cancellable state');
+        }
+
+        await tx.update(reservations).set({
+            status: 'CANCELLED',
+            updatedAt: now,
+        }).where(eq(reservations.id, reservationId));
+
+        const reservedItems = await tx.select().from(reservationItems).where(
+            eq(reservationItems.reservationId, reservationId)
+        );
+
+        for (const item of reservedItems) {
+            await tx.update (products).set({
+                reserved: sql`${products.reserved} - ${item.quantity}`,
+            }).where(eq(products.id, item.productId));
+        }
+
+        await tx.delete(idempotencyRecords).where(eq(idempotencyRecords.reservationId, reservationId));
+
+        await tx.insert(reservationHistory).values({
+            reservationId: reservationId,
+            userId: userId,
+            oldStatus: reservation[0].status,
+            newStatus: 'CANCELLED',
+            actor: userId,
+            transitionedAt: now,
+        });
+    });
+
+    return { message: 'Reservation cancelled' };
   }
 }
