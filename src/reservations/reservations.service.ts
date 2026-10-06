@@ -297,7 +297,9 @@ export class ReservationsService {
                 eq(reservations.status, 'HELD'),
                 lte(reservations.expiresAt, now),
                 )
-            ).limit(BATCH_SIZE).for('update');
+            )
+            .orderBy(reservations.id)
+            .limit(BATCH_SIZE).for('update');
 
             if (expiredReservations.length === 0) {
                 return 0;
