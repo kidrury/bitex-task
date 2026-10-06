@@ -1,13 +1,15 @@
-import { BadRequestException, Body, Controller, Get, Param, Post, Req } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Get, Param, Post, Req, UnauthorizedException, UseGuards } from '@nestjs/common';
 import { ReservationsService } from './reservations.service';
 import { reservationSchema } from './DTO/reservation.dto';
 import type { ReservationDTO} from './DTO/reservation.dto';
 import { ZodValidationPipe } from 'src/common/pipes/zod-validation.pipe';
+import { BearerGuard } from 'src/auth/auth.guard';
 
 @Controller('reservations')
 export class ReservationsController {
   constructor(private readonly reservationsService: ReservationsService) {}
 
+  @UseGuards(BearerGuard)
   @Post()
   async createReservation(@Req() req: Request, @Body(new ZodValidationPipe(reservationSchema)) body: ReservationDTO) {
     const idempotencyKey = req.headers['Idempotency-Key'];
@@ -15,25 +17,46 @@ export class ReservationsController {
       throw new BadRequestException('Idempotency-Key header is required and must be a string');
     }
 
-    const userId = "3631c0f9-e545-46ee-8145-a78e0384219e"; // will replace with actual user ID retrieval logic
+
+    const userId = req['userId'];
+    if (!userId) {
+      throw new UnauthorizedException('missing userId')
+    }
+
     return this.reservationsService.createReservation(body, idempotencyKey, userId);
   }
 
+  @UseGuards(BearerGuard)
   @Get(':id')
-  async getReservations(@Param('id') reservationId: string) {
-    const userId = "3631c0f9-e545-46ee-8145-a78e0384219e"; // will replace with actual user ID retrieval logic
+  async getReservations(@Req() req: Request, @Param('id') reservationId: string) {
+    const userId = req['userId'];
+    
+    if (!userId) {
+      throw new UnauthorizedException('missing userId')
+    }
+    
     return this.reservationsService.getReservation(reservationId, userId);
   }
 
   @Post(':id/confirm')
-  async confirmReservation(@Param('id') reservationId: string) {
-    const userId = "3631c0f9-e545-46ee-8145-a78e0384219e"; // will replace with actual user ID retrieval logic
+  async confirmReservation(@Req() req: Request, @Param('id') reservationId: string) {
+    const userId = req['userId'];
+
+    if (!userId) {
+      throw new UnauthorizedException('missing userId')
+    }
+
     return this.reservationsService.confirmReservation(reservationId, userId);
   }
 
   @Post(':id/cancel')
-  async cancelReservation(@Param('id') reservationId: string) {
-    const userId = "3631c0f9-e545-46ee-8145-a78e0384219e"; // will replace with actual user ID retrieval logic
+  async cancelReservation(@Req() req: Request, @Param('id') reservationId: string) {
+    const userId = req['userId'];
+
+    if (!userId) {
+      throw new UnauthorizedException('missing userId')
+    }
+
     return this.reservationsService.cancelReservation(reservationId, userId);
   }
 }
