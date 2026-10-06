@@ -1,4 +1,4 @@
-import { Module } from "@nestjs/common";
+import { Global, Module } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { Pool } from "pg";
 import * as schema from "./schemas"
@@ -47,7 +47,7 @@ export const databaseProvider= {
 }
 
 
-
+@Global()
 @Module(
    {
     providers: [databaseProvider],
