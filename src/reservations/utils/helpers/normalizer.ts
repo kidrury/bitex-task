@@ -9,3 +9,8 @@ export const normalizeItems = (items: ReservationDTO): string => {
     const normalizedString = entries.join("|");
     return normalizedString;
 }
+
+export const sortItemsForLocking = (items: {
+        productId: string;
+        quantity: number;
+    }[]) => [...items].sort((a, b) => a.productId.localeCompare(b.productId))
