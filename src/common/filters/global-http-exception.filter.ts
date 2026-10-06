@@ -1,30 +1,44 @@
-import { ArgumentsHost, Catch, ExceptionFilter, HttpException, HttpStatus } from "@nestjs/common";
+import { ArgumentsHost, Catch, ExceptionFilter, HttpException, HttpStatus, Logger } from "@nestjs/common";
 import type { Request, Response } from "express";
 import {v4 as uuid} from "uuid";
 
 
 @Catch()
 export class GlobalHttpExceptionFilter implements ExceptionFilter {
-    catch(exception: HttpException, host: ArgumentsHost) {
-        const ctx = host.switchToHttp();
-        const request = ctx.getRequest<Request>();
-        const response = ctx.getResponse<Response>();
-        const status = exception.getStatus();
-        const exceptionResponse = exception.getResponse()
+    private readonly logger = new Logger(GlobalHttpExceptionFilter.name);
 
-        let message = 'an error has occured';
-        if (typeof exceptionResponse === 'object' && 'message' in exceptionResponse) {
-            message = (exceptionResponse as any).message
-        }
+    catch(exception: any, host: ArgumentsHost) {
+        const ctx = host.switchToHttp();
+        const response = ctx.getResponse<Response>();
 
         const requestId = uuid();
 
-        return {
-            code: this.getErrorCode(status, message),
-            message,
+        if (exception instanceof HttpException) {
+            const status = exception.getStatus();
+            const exceptionResponse = exception.getResponse();
+
+            let message = 'an error has occurred';
+            if (typeof exceptionResponse === 'object' && 'message' in exceptionResponse) {
+                message = (exceptionResponse as any).message;
+            }
+
+            return response.status(status).json({
+                code: this.getErrorCode(status, message),
+                message,
+                requestId,
+                timestamp: new Date().toISOString(),
+            });
+        }
+
+        // what if it is not an http error?
+        this.logger.error('Unhandled exception:', exception);
+
+        return response.status(HttpStatus.INTERNAL_SERVER_ERROR).json({
+            code: 'INTERNAL_SERVER_ERROR',
+            message: 'An unexpected error occurred',
             requestId,
             timestamp: new Date().toISOString(),
-        }
+        });
     }
 
     private getErrorCode(status: number, message: string) : string {
