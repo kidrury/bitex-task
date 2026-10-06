@@ -11,6 +11,8 @@ export class ReservationsService {
 
 
   async createReservation(body: ReservationDTO, idempotencyKey: string, userId: string) {
+    const normalized = normalizeItems(body);
+    
     const existing = await this.db.select().from(idempotencyRecords).where(
     and(
       eq(idempotencyRecords.userId, userId),
@@ -19,7 +21,6 @@ export class ReservationsService {
     );
 
     if (existing.length > 0) {
-        const normalized = normalizeItems(body);
         if (normalized !== existing[0].normalizedItems) {
             throw new ConflictException('Idempotency key reused with different items');
         }
@@ -84,8 +85,12 @@ export class ReservationsService {
                 )
             );
             if (retried.length > 0) {
+                if (normalized !== retried[0].normalizedItems) {
+                    throw new ConflictException('Idempotency key reused with different items');
+                }
+                // exact same reservation, so we return the existing one instead of creating a new one
                 return await this.getReservation(retried[0].reservationId, userId);
-            }
+            } 
         }
         throw error;
     }
