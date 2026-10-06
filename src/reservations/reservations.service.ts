@@ -1,5 +1,5 @@
 import { ConflictException, Inject, Injectable, NotFoundException } from '@nestjs/common';
-import { and, eq, lt, lte, sql } from 'drizzle-orm';
+import { and, eq, lte, sql } from 'drizzle-orm';
 import { DB_PROVIDER, type DrizzleDB } from 'src/database/database.module';
 import { idempotencyRecords, products, reservationHistory, reservationItems, reservations } from 'src/database/schemas';
 import { normalizeItems } from './utils/helpers/normalizer';
@@ -108,7 +108,6 @@ export class ReservationsService {
 
   async confirmReservation(reservationId: string, userId: string) {
     return await this.db.transaction(async (tx) => {
-        const now = new Date();
         const reservation = await tx.select().from(reservations).where(
             and(
                 eq(reservations.id, reservationId),
@@ -127,6 +126,8 @@ export class ReservationsService {
             }
             throw new ConflictException('Reservation is not in a confirmable state');
         }
+
+        const now = new Date();
 
         if (reservation[0].expiresAt <= now) {
             await tx.update(reservations).set({
@@ -187,7 +188,6 @@ export class ReservationsService {
 
   async cancelReservation(reservationId: string, userId: string) {
     return await this.db.transaction(async (tx) => {
-        const now = new Date();
         const reservation = await tx.select().from(reservations).where(
             and(
                 eq(reservations.id, reservationId),
@@ -206,6 +206,8 @@ export class ReservationsService {
             }
             throw new ConflictException('Reservation is not in a cancellable state');
         }
+
+        const now = new Date();
 
         if (reservation[0].expiresAt <= now) {
             await tx.update(reservations).set({
