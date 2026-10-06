@@ -1,5 +1,5 @@
 import { ConflictException, Inject, Injectable, NotFoundException } from '@nestjs/common';
-import { and, eq, lt, sql } from 'drizzle-orm';
+import { and, eq, lt, lte, sql } from 'drizzle-orm';
 import { DB_PROVIDER, type DrizzleDB } from 'src/database/database.module';
 import { idempotencyRecords, products, reservationHistory, reservationItems, reservations } from 'src/database/schemas';
 import { normalizeItems } from './utils/helpers/normalizer';
@@ -128,7 +128,7 @@ export class ReservationsService {
             throw new ConflictException('Reservation is not in a confirmable state');
         }
 
-        if (reservation[0].expiresAt < now) {
+        if (reservation[0].expiresAt <= now) {
             await tx.update(reservations).set({
                 status: 'EXPIRED',
                 updatedAt: now,
@@ -207,7 +207,7 @@ export class ReservationsService {
             throw new ConflictException('Reservation is not in a cancellable state');
         }
 
-        if (reservation[0].expiresAt < now) {
+        if (reservation[0].expiresAt <= now) {
             await tx.update(reservations).set({
                 status: 'EXPIRED',
                 updatedAt: now,
@@ -277,7 +277,7 @@ export class ReservationsService {
             const expiredReservations = await tx.select().from(reservations).where(
                 and(
                 eq(reservations.status, 'HELD'),
-                lt(reservations.expiresAt, now),
+                lte(reservations.expiresAt, now),
                 )
             ).limit(BATCH_SIZE).for('update');
 
