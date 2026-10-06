@@ -107,7 +107,7 @@ export class ReservationsService {
   }
 
   async confirmReservation(reservationId: string, userId: string) {
-    return await this.db.transaction(async (tx) => {
+    const result = await this.db.transaction(async (tx) => {
         const reservation = await tx.select().from(reservations).where(
             and(
                 eq(reservations.id, reservationId),
@@ -122,7 +122,7 @@ export class ReservationsService {
         if (reservation[0].status !== 'HELD') {
             //idempotency check
             if (reservation[0].status === 'CONFIRMED') {
-                return { message: 'Reservation already confirmed' };
+                return { outcome:"ALREADY_CONFIRMED" ,message: 'Reservation already confirmed', reservation: reservation[0] };
             }
             throw new ConflictException('Reservation is not in a confirmable state');
         }
@@ -153,14 +153,15 @@ export class ReservationsService {
                 actor: "system",
                 transitionedAt: now,
             });
-            throw new ConflictException('Reservation has expired');
+            return {outcome: "EXPIRED"}
+            // throw new ConflictException('Reservation has expired');
         }
 
 
-        await tx.update(reservations).set({
+        const [updatedReservation] = await tx.update(reservations).set({
             status: 'CONFIRMED',
             updatedAt: now,
-        }).where(eq(reservations.id, reservationId));
+        }).where(eq(reservations.id, reservationId)).returning();
 
         const reservedItems = await tx.select().from(reservationItems).where(
             eq(reservationItems.reservationId, reservationId)
@@ -182,12 +183,17 @@ export class ReservationsService {
             transitionedAt: now,
         });
 
-        return reservation[0];
+        return {outcome: "CONFIRMED", message: "reservation confirmed", reservation: updatedReservation};
     });
+    if (result.outcome === "EXPIRED") {
+        throw new ConflictException('Reservation has expired');
+    }
+
+    return result.reservation;
   }
 
   async cancelReservation(reservationId: string, userId: string) {
-    return await this.db.transaction(async (tx) => {
+    const result = await this.db.transaction(async (tx) => {
         const reservation = await tx.select().from(reservations).where(
             and(
                 eq(reservations.id, reservationId),
@@ -202,7 +208,7 @@ export class ReservationsService {
         if (reservation[0].status !== 'HELD') {
             //idempotency check
             if (reservation[0].status === 'CANCELLED') {
-                return { message: 'Reservation already cancelled' };
+                return { outcome: "ALREADY_CANCELLED", message: 'Reservation already cancelled', reservation: reservation[0]};
             }
             throw new ConflictException('Reservation is not in a cancellable state');
         }
@@ -233,13 +239,13 @@ export class ReservationsService {
                 actor: "system",
                 transitionedAt: now,
             });
-            throw new ConflictException('Reservation has expired');
+            return {outcome: "EXPIRED"}
         }
 
-        await tx.update(reservations).set({
+        const [updatedReservation] = await tx.update(reservations).set({
             status: 'CANCELLED',
             updatedAt: now,
-        }).where(eq(reservations.id, reservationId));
+        }).where(eq(reservations.id, reservationId)).returning();
 
         const reservedItems = await tx.select().from(reservationItems).where(
             eq(reservationItems.reservationId, reservationId)
@@ -260,8 +266,13 @@ export class ReservationsService {
             transitionedAt: now,
         });
 
-        return reservation[0];
+        return {outcome: "CANCELLED", message: "Reservation cancelled", reservation: updatedReservation}
     });
+    if (result.outcome === "EXPIRED") {
+        throw new ConflictException('Reservation has expired');
+    }
+
+    return result.reservation;
   }
 
   // used by scheduler cron
