@@ -1,7 +1,8 @@
+import 'dotenv/config'
 import { drizzle } from 'drizzle-orm/node-postgres';
 import { Pool } from 'pg'
-import * as schema from 'src/database/schemas'
-import { products } from 'src/database/schemas'
+import * as schema from '../src/database/schemas'
+import { products } from '../src/database/schemas'
 
 const seed = async () => {
     const connectionString = process.env.DATABASE_URL;
