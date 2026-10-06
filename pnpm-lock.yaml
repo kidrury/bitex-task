@@ -26,6 +26,9 @@ importers:
       '@nestjs/schedule':
         specifier: ^12.0.2
         version: 12.0.2(@nestjs/common@11.2.7(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/core@11.2.7)
+      dotenv:
+        specifier: ^18.0.5
+        version: 18.0.5
       drizzle-orm:
         specifier: ^0.45.3
         version: 0.45.3(pg@8.23.1)
@@ -1629,6 +1632,11 @@ packages:
 
   dotenv@18.0.3:
     resolution: {integrity: sha512-/8CJTyL817qPnfbQrJgOEcrU3fDrJkRIoXBE566wHuvIXKOCHUZhPqGPbCPi9SogjdGnreF0TlvnTgK6J/8zpA==}
+    engines: {node: '>=12'}
+    hasBin: true
+
+  dotenv@18.0.5:
+    resolution: {integrity: sha512-aBrGvt6KhjxbEnatqMWOMidftwsrCiCvqh1yNIGB9QyF0J+VcWkKDMsvYOEm7ZS82oiV+BT1sTOtIlAmUlTpwQ==}
     engines: {node: '>=12'}
     hasBin: true
 
@@ -4942,6 +4950,8 @@ snapshots:
   dotenv@17.4.2: {}
 
   dotenv@18.0.3: {}
+
+  dotenv@18.0.5: {}
 
   drizzle-orm@0.45.3(pg@8.23.1):
     optionalDependencies:
