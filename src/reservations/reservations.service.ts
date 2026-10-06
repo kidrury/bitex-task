@@ -71,6 +71,15 @@ export class ReservationsService {
                 reservationId: reserved[0].id,
             });
 
+            await tx.insert(reservationHistory).values({
+                reservationId: reserved[0].id,
+                userId,
+                oldStatus: null,
+                newStatus: 'HELD',
+                actor: userId,
+                transitionedAt: new Date(),
+            });
+
             return reserved[0];
 
         });
@@ -297,9 +306,7 @@ export class ReservationsService {
                 eq(reservations.status, 'HELD'),
                 lte(reservations.expiresAt, now),
                 )
-            )
-            .orderBy(reservations.id)
-            .limit(BATCH_SIZE).for('update');
+            ).limit(BATCH_SIZE).for('update');
 
             if (expiredReservations.length === 0) {
                 return 0;
