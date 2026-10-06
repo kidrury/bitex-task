@@ -5,9 +5,10 @@ import { DatabaseModule } from './database/database.module';
 import { ConfigModule } from '@nestjs/config';
 import { ProductsModule } from './products/products.module';
 import { ReservationsModule } from './reservations/reservations.module';
+import { SchedulerModule } from './scheduler/scheduler.module';
 
 @Module({
-  imports: [DatabaseModule, ConfigModule.forRoot({
+  imports: [SchedulerModule, DatabaseModule, ConfigModule.forRoot({
     isGlobal: true,
   }), ProductsModule, ReservationsModule],
   controllers: [AppController],
