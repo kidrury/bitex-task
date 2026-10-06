@@ -76,7 +76,7 @@ export class ReservationsService {
                 userId,
                 oldStatus: null,
                 newStatus: 'HELD',
-                actor: userId,
+                actor: 'custumer',
                 transitionedAt: new Date(),
             });
 
@@ -193,7 +193,7 @@ export class ReservationsService {
             userId: userId,
             oldStatus: reservation[0].status,
             newStatus: 'CONFIRMED',
-            actor: userId,
+            actor: 'customer',
             transitionedAt: now,
         });
 
@@ -276,7 +276,7 @@ export class ReservationsService {
             userId: userId,
             oldStatus: reservation[0].status,
             newStatus: 'CANCELLED',
-            actor: userId,
+            actor: 'customer',
             transitionedAt: now,
         });
 
