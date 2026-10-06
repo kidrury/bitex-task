@@ -1,0 +1,41 @@
+services:
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: bitex
+      POSTGRES_USER: bitex
+      POSTGRES_PASSWORD: bitex
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U bitex -d bitex"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  migrate:
+    build:
+      context: .
+      target: production
+    environment:
+      DATABASE_URL: postgresql://bitex:bitex@db:5432/bitex
+    depends_on:
+      db:
+        condition: service_healthy
+    command: ["pnpm", "db:migrate"]
+
+  app:
+    build:
+      context: .
+      target: production
+    environment:
+      DATABASE_URL: postgresql://bitex:bitex@db:5432/bitex
+      PORT: 3000
+    ports:
+      - "3000:3000"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+volumes:
+  postgres_data:
