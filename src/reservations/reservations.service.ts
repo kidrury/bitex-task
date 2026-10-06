@@ -2,7 +2,7 @@ import { ConflictException, Inject, Injectable, NotFoundException } from '@nestj
 import { and, eq, lte, sql } from 'drizzle-orm';
 import { DB_PROVIDER, type DrizzleDB } from 'src/database/database.module';
 import { idempotencyRecords, products, reservationHistory, reservationItems, reservations } from 'src/database/schemas';
-import { normalizeItems } from './utils/helpers/normalizer';
+import { normalizeItems, sortItemsForLocking } from './utils/helpers/normalizer';
 import { ReservationDTO } from './DTO/reservation.dto';
 
 @Injectable()
@@ -12,7 +12,7 @@ export class ReservationsService {
 
   async createReservation(body: ReservationDTO, idempotencyKey: string, userId: string) {
     const normalized = normalizeItems(body);
-    
+
     const existing = await this.db.select().from(idempotencyRecords).where(
     and(
       eq(idempotencyRecords.userId, userId),
@@ -34,7 +34,7 @@ export class ReservationsService {
                 expiresAt: new Date(Date.now() + 10 * 60 * 1000), // 10 minutes from now
             }).returning({ id: reservations.id });
 
-            for (const item of body.items) {
+            for (const item of sortItemsForLocking(body.items)) {
                 //for each item, check if there's enough inventory and update the reserved count
                 const [product] = await tx.select({
                     reserved: products.reserved,
