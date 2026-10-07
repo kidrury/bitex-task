@@ -3,10 +3,23 @@
   "rootDir": ".",
   "testEnvironment": "node",
   "testRegex": ".e2e-spec.ts$",
+  "setupFiles": ["./setup.ts"],
   "transform": {
-    "^.+\\.(t|j)s$": "ts-jest"
+    "^.+\\.(t|j)s$": ["ts-jest", {
+      "useESM": true,
+      "isolatedModules": true,
+      "tsconfig": {
+        "module": "commonjs",
+        "moduleResolution": "nodenext",
+        "resolvePackageJsonExports": false
+      } 
+    }]
   },
-  "setupFiles": [
-    "<rootDir>/setup.ts"
-  ]
+  "extensionsToTreatAsEsm": [".ts"],
+  "transformIgnorePatterns": [
+    "node_modules/(?!(@nestjs|drizzle-orm|uuid)/)"
+  ],
+  "moduleNameMapper": {
+    "^src/(.*)$": "<rootDir>/../src/$1"
+  }
 }
