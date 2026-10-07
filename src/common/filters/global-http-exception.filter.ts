@@ -45,30 +45,59 @@ export class GlobalHttpExceptionFilter implements ExceptionFilter {
         });
     }
 
-    private getErrorCode(status: number, message: string) : string {
-        switch (status) {
-            case HttpStatus.BAD_REQUEST:
-                if (message.includes("idempotency") || message.includes("Idempotency")) 
-                    return "MISSING_IDEMPOTENCY_KEY"
-                return "INVALID_REQUEST"
-            
-            case HttpStatus.NOT_FOUND:
-                if (message.includes("product")) return "PRODUCT_NOT_FOUND"
-                if (message.includes("reservation")) return "RESERVATION_NOT_FOUND"
-                return "NOT_FOUND"
+    private getErrorCode(status: number, message: string): string {
+    const normalizedMessage = message.toLowerCase();
 
-            case HttpStatus.CONFLICT:
-                if (message.includes("idempotency")) return "IDEMPOTENCY_KEY_CONFLICT"
-                if (message.includes("expired")) return "RESERVATION_EXPIRED"
-                if (message.includes("inventory") || message.includes("product")) return "INSUFFICIENT_STOCK"
-                if (message.includes("state")) return "INVALID_RESERVATION_STATE"
-                return "CONFLICT"
-                
-            case HttpStatus.UNAUTHORIZED:
-                return "UNAUTHORIZED"
-
-            default:
-                return "INTERNAL_SERVER_ERROR"
+    switch (status) {
+        case HttpStatus.BAD_REQUEST:
+        if (normalizedMessage.includes('duplicate products')) {
+            return 'DUPLICATE_PRODUCT';
         }
-    }
+
+        if (normalizedMessage.includes('idempotency')) {
+            return 'MISSING_IDEMPOTENCY_KEY';
+        }
+
+        return 'INVALID_REQUEST';
+
+        case HttpStatus.NOT_FOUND:
+        if (normalizedMessage.includes('product')) {
+            return 'PRODUCT_NOT_FOUND';
+        }
+
+        if (normalizedMessage.includes('reservation')) {
+            return 'RESERVATION_NOT_FOUND';
+        }
+
+        return 'NOT_FOUND';
+
+        case HttpStatus.CONFLICT:
+        if (normalizedMessage.includes('idempotency')) {
+            return 'IDEMPOTENCY_KEY_CONFLICT';
+        }
+
+        if (normalizedMessage.includes('expired')) {
+            return 'RESERVATION_EXPIRED';
+        }
+
+        if (
+            normalizedMessage.includes('inventory') ||
+            normalizedMessage.includes('product')
+        )     {
+            return 'INSUFFICIENT_STOCK';
+        }
+
+        if (normalizedMessage.includes('state')) {
+            return 'INVALID_RESERVATION_STATE';
+        }
+
+        return 'CONFLICT';
+
+        case HttpStatus.UNAUTHORIZED:
+        return 'UNAUTHORIZED';
+
+        default:
+        return 'INTERNAL_SERVER_ERROR';
+  }
+}
 }
