@@ -14,7 +14,7 @@ export class BearerGuard implements CanActivate {
 
   canActivate(context: ExecutionContext): boolean {
     const request = context.switchToHttp().getRequest<Request>();
-    const token = request.headers.authorization?.replace('Bearer: ', '')
+    const token = request.headers.authorization?.replace('Bearer ', '')
 
     if (!token || !VALID_TOKENS[token]) {
       throw new UnauthorizedException('invalid or missing token')
