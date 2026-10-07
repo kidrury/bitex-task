@@ -9,11 +9,11 @@ import * as schema from '../src/database/schemas';
 import { products, reservations, idempotencyRecords, reservationHistory, reservationItems } from '../src/database/schemas';
 // import { db as drizzleDb } from 'drizzle-orm';
 import { eq } from 'drizzle-orm';
+import { DB_PROVIDER, DrizzleDB } from 'src/database/database.module';
 
 describe('Inventory Reservation System (E2E)', () => {
   let app: INestApplication;
-  let db: any;
-  let pool: Pool;
+  let db: DrizzleDB;
 
   const VALID_TOKEN_1 = 'test-token-customer-1';
   const VALID_TOKEN_2 = 'test-token-customer-2';
@@ -29,29 +29,19 @@ describe('Inventory Reservation System (E2E)', () => {
     app = moduleFixture.createNestApplication();
     await app.init();
 
-    // Connect to test database
-    const databaseUrl = process.env.DATABASE_URL;
-    pool = new Pool({ connectionString: databaseUrl });
-    db = drizzle(pool, { schema });
-
-    // Seed initial data
-    await db.delete(products).execute();
-    await db.insert(products).values([
-      { id: 'SKU-A', name: 'Product A', onHand: 10, reserved: 0 },
-      { id: 'SKU-B', name: 'Product B', onHand: 5, reserved: 0 },
-      { id: 'SKU-C', name: 'Product C', onHand: 0, reserved: 0 },
-    ]).execute();
+    // Get db from app's dependency injection (same instance the app uses)
+    db = moduleFixture.get(DB_PROVIDER);
   });
 
   beforeEach(async () => {
-    // Reset database before each test
+    // Delete in reverse FK order to avoid constraint violations
+    await db.delete(reservationHistory).execute();
     await db.delete(reservationItems).execute();
     await db.delete(reservations).execute();
     await db.delete(idempotencyRecords).execute();
-    await db.delete(reservationHistory).execute();
-    
-    // Reset products to initial state
-    await db.update(products).set({ onHand: 0, reserved: 0 }).execute();
+    await db.delete(products).execute();
+
+    // Seed initial products
     await db.insert(products).values([
       { id: 'SKU-A', name: 'Product A', onHand: 10, reserved: 0 },
       { id: 'SKU-B', name: 'Product B', onHand: 5, reserved: 0 },
@@ -861,7 +851,7 @@ describe('Inventory Reservation System (E2E)', () => {
       const history = await db.select().from(reservationHistory).where(eq(reservationHistory.reservationId, reservationId)).execute();
       const expiredRecord = history.find((h: any) => h.newStatus === 'EXPIRED');
       expect(expiredRecord).toBeDefined();
-      expect(expiredRecord.actor).toBe('system');
+      expect(expiredRecord!.actor).toBe('system');
     });
   });
 
