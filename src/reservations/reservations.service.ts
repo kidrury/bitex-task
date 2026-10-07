@@ -84,9 +84,16 @@ export class ReservationsService {
 
         });
     } catch (error) {
-        const err = error as { code?: string };
+        const err = error as {
+            code?: string;
+            cause?: {
+                code?: string;
+            };
+        };
 
-        if (err.code === '23505') { // one of the requests failed because of a unique constraint violation
+        const errorCode = err.code ?? err.cause?.code;
+
+        if (errorCode === '23505') {// one of the requests failed because of a unique constraint violation
             const retried = await this.db.select().from(idempotencyRecords).where(
                 and(
                     eq(idempotencyRecords.userId, userId),
