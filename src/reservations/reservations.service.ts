@@ -76,7 +76,7 @@ export class ReservationsService {
                 userId,
                 oldStatus: null,
                 newStatus: 'HELD',
-                actor: 'custumer',
+                actor: 'customer',
                 transitionedAt: new Date(),
             });
 
