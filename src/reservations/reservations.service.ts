@@ -32,7 +32,7 @@ export class ReservationsService {
             const reserved = await tx.insert(reservations).values({
                 userId: userId,
                 expiresAt: new Date(Date.now() + 10 * 60 * 1000), // 10 minutes from now
-            }).returning({ id: reservations.id });
+            }).returning();
 
             for (const item of sortItemsForLocking(body.items)) {
                 //for each item, check if there's enough inventory and update the reserved count
