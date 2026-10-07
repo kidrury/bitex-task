@@ -1,6 +1,6 @@
 import { ArgumentsHost, Catch, ExceptionFilter, HttpException, HttpStatus, Logger } from "@nestjs/common";
 import type { Request, Response } from "express";
-import {v4 as uuid} from "uuid";
+import { randomUUID } from 'crypto';
 
 
 @Catch()
@@ -11,7 +11,7 @@ export class GlobalHttpExceptionFilter implements ExceptionFilter {
         const ctx = host.switchToHttp();
         const response = ctx.getResponse<Response>();
 
-        const requestId = uuid();
+        const requestId = randomUUID();
 
         if (exception instanceof HttpException) {
             const status = exception.getStatus();
@@ -19,7 +19,11 @@ export class GlobalHttpExceptionFilter implements ExceptionFilter {
 
             let message = 'an error has occurred';
             if (typeof exceptionResponse === 'object' && 'message' in exceptionResponse) {
-                message = (exceptionResponse as any).message;
+            message = (exceptionResponse as any).message;
+            }
+            // If message is still a string AND there are details, use the first detail
+            if (Array.isArray((exceptionResponse as any).details) && (exceptionResponse as any).details.length > 0) {
+            message = (exceptionResponse as any).details[0];
             }
 
             return response.status(status).json({
@@ -44,10 +48,8 @@ export class GlobalHttpExceptionFilter implements ExceptionFilter {
     private getErrorCode(status: number, message: string) : string {
         switch (status) {
             case HttpStatus.BAD_REQUEST:
-                if (message.includes("Idempotency-Key")) return "MISSING_IDEMPOTENCY_KEY"
-                if (message.includes("duplicate")) return "DUPLICATE_PRODUCT"
-                if (message.includes("quantity")) return "INVALID_QUANTITY"
-                if (message.includes("empty")) return "EMPTY_ITEMS"
+                if (message.includes("idempotency") || message.includes("Idempotency")) 
+                    return "MISSING_IDEMPOTENCY_KEY"
                 return "INVALID_REQUEST"
             
             case HttpStatus.NOT_FOUND:
