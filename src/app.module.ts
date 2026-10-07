@@ -1,6 +1,4 @@
 import { Module } from '@nestjs/common';
-import { AppController } from './app.controller';
-import { AppService } from './app.service';
 import { DatabaseModule } from './database/database.module';
 import { ConfigModule } from '@nestjs/config';
 import { ProductsModule } from './products/products.module';
@@ -13,8 +11,7 @@ import { GlobalHttpExceptionFilter } from './common/filters/global-http-exceptio
   imports: [SchedulerModule, DatabaseModule, ConfigModule.forRoot({
     isGlobal: true,
   }), ProductsModule, ReservationsModule],
-  controllers: [AppController],
-  providers: [AppService,
+  providers: [
     {
       provide: APP_FILTER,
       useClass: GlobalHttpExceptionFilter,
