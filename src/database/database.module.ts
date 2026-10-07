@@ -1,4 +1,4 @@
-import { Global, Module } from "@nestjs/common";
+import { Global, Module, OnModuleDestroy } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { Pool } from "pg";
 import * as schema from "./schemas"
@@ -7,6 +7,7 @@ import { drizzle, NodePgDatabase } from "drizzle-orm/node-postgres";
 export type DrizzleDB = NodePgDatabase<typeof schema>
 export const DB_PROVIDER = "DB"
 
+let databasePool: Pool | undefined;
 
 const createDBConnection = async (connStr: string | undefined) => {
     if (!connStr) throw new Error("missing connection string") 
@@ -16,13 +17,13 @@ const createDBConnection = async (connStr: string | undefined) => {
     while (retries) {
         try {
             // create connection to database
-            const pool = new Pool({
+            databasePool = new Pool({
                 connectionString: connStr,
             })
             
-            await pool.query("SELECT 1") // test connection
+            await databasePool.query("SELECT 1") // test connection
 
-            return drizzle(pool, { schema })
+            return drizzle(databasePool, { schema })
         } catch (err) {
             retries -= 1
             console.log("failed to connect to database, retrying...")
@@ -54,4 +55,8 @@ export const databaseProvider= {
     exports: [DB_PROVIDER]
    }
 )
-export class DatabaseModule {}
+export class DatabaseModule implements OnModuleDestroy {
+    async onModuleDestroy() {
+        await databasePool?.end();
+    }
+}
