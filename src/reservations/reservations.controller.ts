@@ -1,4 +1,4 @@
-import { BadRequestException, Body, Controller, Get, Param, Post, Req, UnauthorizedException, UseGuards } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Get, HttpStatus, Param, Post, Req, UnauthorizedException, UseGuards, HttpCode } from '@nestjs/common';
 import { ReservationsService } from './reservations.service';
 import { reservationSchema } from './DTO/reservation.dto';
 import type { ReservationDTO} from './DTO/reservation.dto';
@@ -39,6 +39,7 @@ export class ReservationsController {
   }
 
   @UseGuards(BearerGuard)
+  @HttpCode(HttpStatus.OK)
   @Post(':id/confirm')
   async confirmReservation(@Req() req: Request, @Param('id') reservationId: string) {
     const userId = req['userId'];
@@ -51,6 +52,7 @@ export class ReservationsController {
   }
 
   @UseGuards(BearerGuard)
+  @HttpCode(HttpStatus.OK)
   @Post(':id/cancel')
   async cancelReservation(@Req() req: Request, @Param('id') reservationId: string) {
     const userId = req['userId'];
