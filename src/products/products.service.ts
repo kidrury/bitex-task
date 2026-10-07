@@ -1,5 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { sql } from 'drizzle-orm';
+import { sql, asc } from 'drizzle-orm';
 import { DB_PROVIDER } from 'src/database/database.module';
 import type { DrizzleDB } from 'src/database/database.module';
 import { products } from 'src/database/schemas/products';
@@ -14,7 +14,7 @@ export class ProductsService {
             onHand: products.onHand,
             reserved: products.reserved,
             available: sql<number>`(${products.onHand} - ${products.reserved})`,
-        }).from(products).limit(limit).offset(offset)
+        }).from(products).orderBy(asc(products.id)).limit(limit).offset(offset)
 
         const countResult = await this.db.select({
             count: sql<number>`COUNT(*)`
