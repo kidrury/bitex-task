@@ -17,7 +17,7 @@ export class ProductsService {
         }).from(products).orderBy(asc(products.id)).limit(limit).offset(offset)
 
         const countResult = await this.db.select({
-            count: sql<number>`COUNT(*)`
+            count: sql<number>`CAST(COUNT(*) as integer)`
         }).from(products)
 
         const total = countResult[0].count || 0;
