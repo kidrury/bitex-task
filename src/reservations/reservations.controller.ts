@@ -12,7 +12,7 @@ export class ReservationsController {
   @UseGuards(BearerGuard)
   @Post()
   async createReservation(@Req() req: Request, @Body(new ZodValidationPipe(reservationSchema)) body: ReservationDTO) {
-    const idempotencyKey = req.headers['Idempotency-Key'];
+    const idempotencyKey = req.headers['idempotency-key'] as string;
     if (!idempotencyKey || typeof idempotencyKey !== 'string') {
       throw new BadRequestException('Idempotency-Key header is required and must be a string');
     }
