@@ -10,10 +10,12 @@ import { products, reservations, idempotencyRecords, reservationHistory, reserva
 // import { db as drizzleDb } from 'drizzle-orm';
 import { eq } from 'drizzle-orm';
 import { DB_PROVIDER, DrizzleDB } from 'src/database/database.module';
+import { ReservationsService } from '../src/reservations/reservations.service'; 
 
 describe('Inventory Reservation System (E2E)', () => {
   let app: INestApplication;
   let db: DrizzleDB;
+  let reservationsService: ReservationsService;
 
   const VALID_TOKEN_1 = 'test-token-customer-1';
   const VALID_TOKEN_2 = 'test-token-customer-2';
@@ -31,6 +33,8 @@ describe('Inventory Reservation System (E2E)', () => {
 
     // Get db from app's dependency injection (same instance the app uses)
     db = moduleFixture.get(DB_PROVIDER);
+
+    reservationsService = moduleFixture.get(ReservationsService);
   });
 
   beforeEach(async () => {
@@ -244,6 +248,55 @@ describe('Inventory Reservation System (E2E)', () => {
       expect(response.body.code).toBe('INSUFFICIENT_STOCK');
     });
 
+    it('TC7c: Should rollback all stock changes when any item cannot be reserved', async () => {
+      const response = await request(app.getHttpServer())
+        .post('/reservations')
+        .set('Authorization', `Bearer ${VALID_TOKEN_1}`)
+        .set('Idempotency-Key', 'rollback-test-1')
+        .send({
+          items: [
+            { productId: 'SKU-A', quantity: 2 },
+            { productId: 'SKU-C', quantity: 1 },
+          ],
+        })
+        .expect(409);
+
+      expect(response.body.code).toBe('INSUFFICIENT_STOCK');
+
+      const productA = await db
+        .select()
+        .from(products)
+        .where(eq(products.id, 'SKU-A'))
+        .execute();
+
+      expect(productA[0].reserved).toBe(0);
+
+      const createdReservations = await db
+        .select()
+        .from(reservations)
+        .execute();
+
+      const createdItems = await db
+        .select()
+        .from(reservationItems)
+        .execute();
+
+      const createdIdempotencyRecords = await db
+        .select()
+        .from(idempotencyRecords)
+        .execute();
+
+      const createdHistory = await db
+        .select()
+        .from(reservationHistory)
+        .execute();
+
+      expect(createdReservations).toHaveLength(0);
+      expect(createdItems).toHaveLength(0);
+      expect(createdIdempotencyRecords).toHaveLength(0);
+      expect(createdHistory).toHaveLength(0);
+    });
+
     // ============================================================
     // TEST 8: Idempotency - Same Request Returns Existing Reservation
     // ============================================================
@@ -279,6 +332,63 @@ describe('Inventory Reservation System (E2E)', () => {
       // Stock should only be reserved once
       const productA = await db.select().from(products).where(eq(products.id, 'SKU-A')).execute();
       expect(productA[0].reserved).toBe(2);
+    });
+
+    it('TC8b: Should treat reordered items as the same idempotent request without extending expiry', async () => {
+      const idempotencyKey = 'idempotent-order-test';
+
+      const firstResponse = await request(app.getHttpServer())
+        .post('/reservations')
+        .set('Authorization', `Bearer ${VALID_TOKEN_1}`)
+        .set('Idempotency-Key', idempotencyKey)
+        .send({
+          items: [
+            { productId: 'SKU-B', quantity: 2 },
+            { productId: 'SKU-A', quantity: 3 },
+          ],
+        })
+        .expect(201);
+
+      const firstId = firstResponse.body.id;
+      const firstExpiresAt = firstResponse.body.expiresAt;
+
+      const secondResponse = await request(app.getHttpServer())
+        .post('/reservations')
+        .set('Authorization', `Bearer ${VALID_TOKEN_1}`)
+        .set('Idempotency-Key', idempotencyKey)
+        .send({
+          items: [
+            { productId: 'SKU-A', quantity: 3 },
+            { productId: 'SKU-B', quantity: 2 },
+          ],
+        })
+        .expect(201);
+
+      expect(secondResponse.body.id).toBe(firstId);
+      expect(secondResponse.body.expiresAt).toBe(firstExpiresAt);
+
+      const productA = await db
+        .select()
+        .from(products)
+        .where(eq(products.id, 'SKU-A'))
+        .execute();
+
+      const productB = await db
+        .select()
+        .from(products)
+        .where(eq(products.id, 'SKU-B'))
+        .execute();
+
+      expect(productA[0].reserved).toBe(3);
+      expect(productB[0].reserved).toBe(2);
+
+      const history = await db
+        .select()
+        .from(reservationHistory)
+        .where(eq(reservationHistory.reservationId, firstId))
+        .execute();
+
+      expect(history).toHaveLength(1);
     });
 
     // ============================================================
@@ -937,6 +1047,92 @@ describe('Inventory Reservation System (E2E)', () => {
       // Verify stock was released
       const product = await db.select().from(products).where(eq(products.id, 'SKU-A')).execute();
       expect(product[0].reserved).toBe(0);
+    });
+
+    it('TC18b: Should process expired reservations in bounded batches and release stock exactly once', async () => {
+      await db
+        .update(products)
+        .set({
+          onHand: 101,
+          reserved: 101,
+        })
+        .where(eq(products.id, 'SKU-A'))
+        .execute();
+
+      const expiredAt = new Date(Date.now() - 5000);
+
+      const insertedReservations = await db
+        .insert(reservations)
+        .values(
+          Array.from({ length: 101 }, () => ({
+            userId: CUSTOMER_1_ID,
+            status: 'HELD' as const,
+            expiresAt: expiredAt,
+          })),
+        )
+        .returning();
+
+      await db.insert(reservationItems).values(
+        insertedReservations.map((reservation) => ({
+          reservationId: reservation.id,
+          productId: 'SKU-A',
+          quantity: 1,
+        })),
+      );
+
+      await db.insert(reservationHistory).values(
+        insertedReservations.map((reservation) => ({
+          reservationId: reservation.id,
+          userId: CUSTOMER_1_ID,
+          oldStatus: null,
+          newStatus: 'HELD' as const,
+          actor: 'customer' as const,
+          transitionedAt: expiredAt,
+        })),
+      );
+
+      await reservationsService.cancelExpiredReservations();
+
+      const expiredReservations = await db
+        .select()
+        .from(reservations)
+        .where(eq(reservations.status, 'EXPIRED'))
+        .execute();
+
+      expect(expiredReservations).toHaveLength(101);
+
+      const productA = await db
+        .select()
+        .from(products)
+        .where(eq(products.id, 'SKU-A'))
+        .execute();
+
+      expect(productA[0].reserved).toBe(0);
+      expect(productA[0].onHand).toBe(101);
+
+      const expiredHistory = await db
+        .select()
+        .from(reservationHistory)
+        .execute();
+
+      const systemExpiredTransitions = expiredHistory.filter(
+        (entry) =>
+          entry.newStatus === 'EXPIRED' &&
+          entry.actor === 'system',
+      );
+
+      expect(systemExpiredTransitions).toHaveLength(101);
+
+      // Running the expiry job again must not release stock again.
+      await reservationsService.cancelExpiredReservations();
+
+      const productAfterSecondRun = await db
+        .select()
+        .from(products)
+        .where(eq(products.id, 'SKU-A'))
+        .execute();
+
+      expect(productAfterSecondRun[0].reserved).toBe(0);
     });
   });
 });
