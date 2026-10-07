@@ -38,6 +38,7 @@ export class ReservationsController {
     return this.reservationsService.getReservation(reservationId, userId);
   }
 
+  @UseGuards(BearerGuard)
   @Post(':id/confirm')
   async confirmReservation(@Req() req: Request, @Param('id') reservationId: string) {
     const userId = req['userId'];
@@ -49,6 +50,7 @@ export class ReservationsController {
     return this.reservationsService.confirmReservation(reservationId, userId);
   }
 
+  @UseGuards(BearerGuard)
   @Post(':id/cancel')
   async cancelReservation(@Req() req: Request, @Param('id') reservationId: string) {
     const userId = req['userId'];
